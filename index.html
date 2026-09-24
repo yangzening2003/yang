@@ -225,6 +225,22 @@
         const mvuData = ref({});
         const ui = reactive({});
 
+        // 资源与六维显示清单（在 setup 作用域内声明，供 resourceBar 与模板共用）
+        const resources = [
+          { key: 'HP', name: 'HP', path: 'stat_data.角色资源.HP', noScale: true },
+          { key: 'MP', name: 'MP', path: 'stat_data.角色资源.MP', noScale: true },
+          { key: 'SP', name: 'SP', path: 'stat_data.角色资源.SP', noScale: true },
+          { key: 'Sanity', name: 'Sanity', path: 'stat_data.角色资源.Sanity', scale: 100 },
+        ];
+
+        const attrs = [
+          { key: 'STR', name: 'STR', path: 'stat_data.角色资源.STR' },
+          { key: 'INT', name: 'INT', path: 'stat_data.角色资源.INT' },
+          { key: 'AGI', name: 'AGI', path: 'stat_data.角色资源.AGI' },
+          { key: 'DEF', name: 'DEF', path: 'stat_data.角色资源.DEF' },
+          { key: 'MR', name: 'MR', path: 'stat_data.角色资源.MR' },
+        ];
+
         function asText(value, fallback) {
           if (value === undefined || value === null || value === '') return fallback;
           if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -247,7 +263,7 @@
         }
 
         function resourceBar(path) {
-          const res = (resources || []).find(r => r.path === path);
+          const res = resources.find(r => r.path === path);
           if (!res || res.noScale) return 0;
           return percentAt(path, 0, res.scale);
         }
@@ -303,19 +319,7 @@
         return {
           phase, statusMessage, ui,
           textAt, numberAt, percentAt, resourceBar, listAt, entriesAt, itemText,
-          resources: [
-            { key: 'HP', name: 'HP', path: 'stat_data.角色资源.HP', noScale: true },
-            { key: 'MP', name: 'MP', path: 'stat_data.角色资源.MP', noScale: true },
-            { key: 'SP', name: 'SP', path: 'stat_data.角色资源.SP', noScale: true },
-            { key: 'Sanity', name: 'Sanity', path: 'stat_data.角色资源.Sanity', scale: 100 },
-          ],
-          attrs: [
-            { key: 'STR', name: 'STR', path: 'stat_data.角色资源.STR' },
-            { key: 'INT', name: 'INT', path: 'stat_data.角色资源.INT' },
-            { key: 'AGI', name: 'AGI', path: 'stat_data.角色资源.AGI' },
-            { key: 'DEF', name: 'DEF', path: 'stat_data.角色资源.DEF' },
-            { key: 'MR', name: 'MR', path: 'stat_data.角色资源.MR' },
-          ],
+          resources, attrs,
           unitEntries() { return entriesAt('stat_data.战斗结算.单位'); },
           itemEntries() { return entriesAt('stat_data.持有物.道具'); },
           factionEntries() { return entriesAt('stat_data.阵营.声望'); },
