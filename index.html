@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { width: 100%; margin: 0; padding: 0; }
+    body { overflow-x: hidden; background: transparent; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    [v-cloak] { display: none !important; }
+    .status-shell { position: relative; width: 100%; max-width: 100%; color: #e8e6df; font-size: 14px; line-height: 1.6; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+    }
+
+    /* 区块与标题 */
+    .block {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      background: rgba(20, 22, 28, 0.62);
+    }
+    .block-title {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: #9aa3ad;
+      margin-bottom: 8px;
+    }
+    /* 行布局：桌面两列，窄屏单列 */
+    .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+    @media (max-width: 560px) { .rows { grid-template-columns: 1fr; } }
+    .row { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }
+    .row .label { color: #9aa3ad; flex-shrink: 0; }
+    .row .value { color: #f0eee6; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+    /* 资源条 */
+    .res { margin-bottom: 8px; }
+    .res-head { display: flex; justify-content: space-between; font-size: 12px; color: #9aa3ad; margin-bottom: 3px; }
+    .res-head .res-value { color: #f0eee6; }
+    .res-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+    .res-fill { display: block; height: 100%; border-radius: 3px; width: 0; transition: width 180ms ease; }
+    .res-hp .res-fill { background: #c0564f; }
+    .res-mp .res-fill { background: #4f6ec0; }
+    .res-sp .res-fill { background: #c0a04f; }
+    .res-sanity .res-fill { background: #8e5fc0; }
+    .no-scale .res-track { display: none; }
+
+    /* 战斗区块 */
+    .battle-empty { color: #7a8188; font-size: 13px; }
+    .battle-meta .row { margin-bottom: 4px; }
+    .unit {
+      border-left: 3px solid #c0564f;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 0 6px 6px 0;
+      min-width: 0;
+    }
+    .unit-user { border-left-color: #4f9f8f; }
+    .unit-name { font-size: 13px; color: #f0eee6; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .unit-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; }
+    @media (max-width: 560px) { .unit-rows { grid-template-columns: 1fr; } }
+    .unit-rows .row { font-size: 12px; min-height: 20px; }
+    .stacks { margin-top: 6px; font-size: 12px; color: #b8c0c8; }
+    .stacks:empty { display: none; }
+    .stack-item { display: flex; justify-content: space-between; gap: 10px; }
+
+    /* 持有物 */
+    .items .row { margin-bottom: 4px; }
+    .empty-hint { color: #7a8188; font-size: 12px; }
+
+    /* 阵营 */
+    .faction .row { margin-bottom: 4px; }
+
+    /* 折叠详情 */
+    details { margin-top: 8px; }
+    details summary {
+      cursor: pointer;
+      font-size: 12px;
+      color: #9aa3ad;
+      user-select: none;
+      padding: 2px 0;
+    }
+    details[open] summary { margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <section class="status-shell" aria-label="状态栏">
+      <div v-if="phase === 'loading'" role="status" v-text="statusMessage"></div>
+      <div v-else-if="phase === 'empty'" role="status" v-text="statusMessage"></div>
+      <div v-else-if="phase === 'error'" role="alert" v-text="statusMessage"></div>
+      <div v-else>
+
+        <!-- 时空：固定文本，始终可见 -->
+        <div class="block">
+          <div class="block-title">时空</div>
+          <div class="rows">
+            <div class="row">
+              <span class="label">日期</span>
+              <span class="value" v-text="textAt('stat_data.时空.日期', '无')"></span>
+            </div>
+            <div class="row">
+              <span class="label">时间</span>
+              <span class="value" v-text="textAt('stat_data.时空.时间', '无')"></span>
+            </div>
+            <div class="row">
+              <span class="label">位置</span>
+              <span class="value" v-text="textAt('stat_data.时空.位置', '无')"></span>
+            </div>
+            <div class="row">
+              <span class="label">回合</span>
+              <span class="value" v-text="numberAt('stat_data.战斗结算.回合', 0)"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 角色资源：{user} 自身，有真实范围（0~100）的才画条 -->
+        <div class="block">
+          <div class="block-title">角色资源</div>
+          <div v-for="res in resources" :key="res.key">
+            <div :class="['res', res.noScale ? 'no-scale' : '']">
+              <div class="res-head">
+                <span v-text="res.name"></span>
+                <span class="res-value" v-text="`${numberAt(res.path, 0)}${res.scale ? ' / ' + res.scale : ''}`"></span>
+              </div>
+              <div v-if="!res.noScale" class="res-track">
+                <span class="res-fill" :style="`width: ${resourceBar(res.path)}%`"></span>
+              </div>
+            </div>
+          </div>
+          <div class="rows" style="margin-top:8px">
+            <div class="row" v-for="attr in attrs" :key="attr.key">
+              <span class="label" v-text="attr.name"></span>
+              <span class="value" v-text="numberAt(attr.path, 0)"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 战斗 -->
+        <div class="block">
+          <div class="block-title">战斗</div>
+          <div v-if="unitEntries.length === 0" class="battle-empty">当前无战斗</div>
+          <div v-else>
+            <div class="battle-meta">
+              <div class="row">
+                <span class="label">战场</span>
+                <span class="value" v-text="textAt('stat_data.战斗结算.战场.名称', '无')"></span>
+              </div>
+              <div class="row">
+                <span class="label">规模</span>
+                <span class="value" v-text="textAt('stat_data.战斗结算.战场.规模', '无')"></span>
+              </div>
+              <div class="row">
+                <span class="label">机制</span>
+                <span class="value" v-text="textAt('stat_data.战斗结算.战场.机制', '无')"></span>
+              </div>
+            </div>
+            <div class="unit" v-for="(entry, idx) in unitEntries" :key="entry[0]" :class="{'unit-user': idx === 0}">
+              <div class="unit-name" v-text="entry[0]"></div>
+              <div class="unit-rows">
+                <div class="row"><span class="label">HP</span><span class="value" v-text="numberAt('stat_data.战斗结算.单位.' + entry[0] + '.HP', 0)"></span></div>
+                <div class="row"><span class="label">MP</span><span class="value" v-text="numberAt('stat_data.战斗结算.单位.' + entry[0] + '.MP', 0)"></span></div>
+                <div class="row"><span class="label">SP</span><span class="value" v-text="numberAt('stat_data.战斗结算.单位.' + entry[0] + '.SP', 0)"></span></div>
+                <div class="row"><span class="label">Sanity</span><span class="value" v-text="numberAt('stat_data.战斗结算.单位.' + entry[0] + '.Sanity', 0)"></span></div>
+              </div>
+              <div class="stacks">
+                <div class="stack-item" v-for="st in stackEntries(entry[0])" :key="st[0]">
+                  <span v-text="st[0]"></span>
+                  <span v-text="`${st[1].层数}层 / ${st[1].剩余回合}回合`"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 持有物 -->
+        <div class="block">
+          <div class="block-title">持有物</div>
+          <div class="rows">
+            <div class="row">
+              <span class="label">金币</span>
+              <span class="value" v-text="numberAt('stat_data.持有物.金币', 0)"></span>
+            </div>
+            <div class="row">
+              <span class="label">道具</span>
+              <span class="value empty-hint" v-if="itemEntries.length === 0">无</span>
+            </div>
+          </div>
+          <details v-if="itemEntries.length > 0">
+            <summary>道具明细</summary>
+            <div class="items">
+              <div class="row" v-for="item in itemEntries" :key="item[0]">
+                <span class="label" v-text="item[0]"></span>
+                <span class="value" v-text="`×${item[1].数量}`"></span>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- 阵营 -->
+        <div class="block">
+          <div class="block-title">阵营声望</div>
+          <div v-if="factionEntries.length === 0" class="battle-empty">尚未与任何阵营建立档案</div>
+          <div class="faction" v-else>
+            <div class="row" v-for="f in factionEntries" :key="f[0]">
+              <span class="label" v-text="f[0]"></span>
+              <span class="value" v-text="f[1]"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    const { createApp, onMounted, reactive, ref } = Vue;
+
+    const app = createApp({
+      setup() {
+        const phase = ref('loading');
+        const statusMessage = ref('正在读取状态……');
+        const mvuData = ref({});
+        const ui = reactive({});
+
+        function asText(value, fallback) {
+          if (value === undefined || value === null || value === '') return fallback;
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+          return fallback;
+        }
+
+        function textAt(path, fallback = '未确认') {
+          return asText(_.get(mvuData.value, path), fallback);
+        }
+
+        function numberAt(path, fallback = 0) {
+          const value = Number(_.get(mvuData.value, path));
+          return Number.isFinite(value) ? value : fallback;
+        }
+
+        function percentAt(path, minimum, maximum) {
+          const value = numberAt(path, minimum);
+          if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum <= minimum) return 0;
+          return Math.min(100, Math.max(0, ((value - minimum) / (maximum - minimum)) * 100));
+        }
+
+        function resourceBar(path) {
+          const res = (resources || []).find(r => r.path === path);
+          if (!res || res.noScale) return 0;
+          return percentAt(path, 0, res.scale);
+        }
+
+        function listAt(path) {
+          const value = _.get(mvuData.value, path);
+          return Array.isArray(value) ? value : [];
+        }
+
+        function entriesAt(path) {
+          const value = _.get(mvuData.value, path);
+          return value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value) : [];
+        }
+
+        function itemText(item, path = '', fallback = '未确认') {
+          const value = path ? _.get(item, path) : item;
+          return asText(value, fallback);
+        }
+
+        function refresh() {
+          try {
+            const next = Mvu.getMvuData({ type: 'message', message_id: getCurrentMessageId() });
+            if (!next || !_.has(next, 'stat_data')) {
+              mvuData.value = {};
+              statusMessage.value = '状态尚未初始化。';
+              phase.value = 'empty';
+              return;
+            }
+            mvuData.value = next;
+            phase.value = 'ready';
+          } catch (error) {
+            console.error('[MVU状态栏] 读取失败', error);
+            statusMessage.value = '状态读取失败。';
+            phase.value = 'error';
+          }
+        }
+
+        async function init() {
+          try {
+            await waitGlobalInitialized('Mvu');
+            eventOn(Mvu.events.VARIABLE_INITIALIZED, refresh);
+            eventOn(Mvu.events.VARIABLE_UPDATE_ENDED, refresh);
+            refresh();
+          } catch (error) {
+            console.error('[MVU状态栏] 初始化失败', error);
+            statusMessage.value = '状态栏初始化失败。';
+            phase.value = 'error';
+          }
+        }
+
+        onMounted(() => { void init(); });
+
+        return {
+          phase, statusMessage, ui,
+          textAt, numberAt, percentAt, resourceBar, listAt, entriesAt, itemText,
+          resources: [
+            { key: 'HP', name: 'HP', path: 'stat_data.角色资源.HP', noScale: true },
+            { key: 'MP', name: 'MP', path: 'stat_data.角色资源.MP', noScale: true },
+            { key: 'SP', name: 'SP', path: 'stat_data.角色资源.SP', noScale: true },
+            { key: 'Sanity', name: 'Sanity', path: 'stat_data.角色资源.Sanity', scale: 100 },
+          ],
+          attrs: [
+            { key: 'STR', name: 'STR', path: 'stat_data.角色资源.STR' },
+            { key: 'INT', name: 'INT', path: 'stat_data.角色资源.INT' },
+            { key: 'AGI', name: 'AGI', path: 'stat_data.角色资源.AGI' },
+            { key: 'DEF', name: 'DEF', path: 'stat_data.角色资源.DEF' },
+            { key: 'MR', name: 'MR', path: 'stat_data.角色资源.MR' },
+          ],
+          unitEntries() { return entriesAt('stat_data.战斗结算.单位'); },
+          itemEntries() { return entriesAt('stat_data.持有物.道具'); },
+          factionEntries() { return entriesAt('stat_data.阵营.声望'); },
+          stackEntries(unitName) {
+            return entriesAt('stat_data.战斗结算.单位.' + unitName + '.状态');
+          },
+        };
+      },
+    });
+
+    app.config.errorHandler = error => {
+      console.error('[MVU状态栏] Vue渲染失败', error);
+      const root = document.querySelector('#app');
+      if (root) {
+        root.removeAttribute('v-cloak');
+        root.textContent = '状态栏渲染失败。';
+      }
+    };
+
+    app.mount('#app');
+  </script>
+  <!-- @qk-complete | 工件=MVU单HTML-Vue状态栏 | 已闭合=合同模板,合同CSS,本地界面状态,安全读取,MVU初始化与刷新,空态,错误态 -->
+</body>
+</html>
